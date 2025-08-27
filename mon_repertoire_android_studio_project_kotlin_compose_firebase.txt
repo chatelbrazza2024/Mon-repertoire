@@ -1,0 +1,805 @@
+# Mon Repertoire — Android Studio project skeleton (Kotlin + Jetpack Compose + Room + Firebase)
+
+This file lists the project structure and contains full source files you can copy into Android Studio.
+
+---
+
+## README (instructions)
+
+1. Create a new Firebase project at https://console.firebase.google.com/ and enable: Authentication (Google), Firestore (or Realtime DB), and add an Android app.
+2. Add the generated `google-services.json` to `app/`.
+3. Add your app SHA-1 in Firebase Auth settings (for Google Sign-In) and download updated `google-services.json` if needed.
+4. Open the project in Android Studio, sync Gradle, and run on a device or emulator.
+
+---
+
+# Project files
+
+## settings.gradle.kts
+```
+rootProject.name = "monrepertoire"
+include(":app")
+```
+
+## build.gradle.kts (project)
+```
+// Top-level build file
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath("com.android.tools.build:gradle:8.2.0")
+        classpath("com.google.gms:google-services:4.3.15")
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+```
+
+## app/build.gradle.kts (module)
+```
+plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+    id("com.google.gms.google-services")
+}
+
+android {
+    namespace = "cg.missamou.monrepertoire"
+    compileSdk = 34
+
+    defaultConfig {
+        applicationId = "cg.missamou.monrepertoire"
+        minSdk = 24
+        targetSdk = 34
+        versionCode = 1
+        versionName = "1.0"
+    }
+
+    signingConfigs {
+        create("release") {
+            // configure keystore when ready
+        }
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+    }
+
+    buildFeatures { compose = true }
+    composeOptions { kotlinCompilerExtensionVersion = "1.5.15" }
+    kotlinOptions { jvmTarget = "17" }
+}
+
+dependencies {
+    val composeBom = platform("androidx.compose:compose-bom:2024.06.00")
+    implementation(composeBom)
+
+    implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.activity:activity-compose:1.9.2")
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.material3:material3:1.2.1")
+    implementation("androidx.navigation:navigation-compose:2.8.0")
+
+    // Room
+    implementation("androidx.room:room-runtime:2.5.2")
+    kapt("androidx.room:room-compiler:2.5.2")
+    implementation("androidx.room:room-ktx:2.5.2")
+
+    // Firebase
+    implementation("com.google.firebase:firebase-auth-ktx:22.1.1")
+    implementation("com.google.firebase:firebase-firestore-ktx:24.7.1")
+
+    // Google Sign-In
+    implementation("com.google.android.gms:play-services-auth:20.6.0")
+
+    // Coroutines
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+
+    debugImplementation("androidx.compose.ui:ui-tooling")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
+}
+```
+
+## AndroidManifest.xml
+```
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="cg.missamou.monrepertoire">
+
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <uses-permission android:name="android.permission.WRITE_CONTACTS" />
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.MonRepertoire">
+        <activity android:name="cg.missamou.monrepertoire.ui.MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>
+```
+
+## res/values/strings.xml
+```
+<resources>
+    <string name="app_name">Mon Répertoire</string>
+    <string name="contact_developer_email">chatelbrazza2009@gmail.com</string>
+    <string name="contact_developer_whatsapp">+242066399414</string>
+</resources>
+```
+
+## res/values/themes.xml
+```
+<resources>
+    <style name="Theme.MonRepertoire" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">#2196F3</item>
+        <item name="colorSecondary">#FFEB3B</item>
+    </style>
+</resources>
+```
+
+---
+
+# Kotlin source files
+
+All Kotlin files go under `app/src/main/java/cg/missamou/monrepertoire/`.
+
+### data/Contact.kt
+```
+package cg.missamou.monrepertoire.data
+
+import androidx.room.Entity
+import androidx.room.PrimaryKey
+
+@Entity(tableName = "contacts")
+data class Contact(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val phone: String,
+    val email: String? = null
+)
+```
+
+### data/ContactDao.kt
+```
+package cg.missamou.monrepertoire.data
+
+import androidx.room.*
+import kotlinx.coroutines.flow.Flow
+
+@Dao
+interface ContactDao {
+    @Query("SELECT * FROM contacts ORDER BY name ASC")
+    fun getAll(): Flow<List<Contact>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(contact: Contact): Long
+
+    @Delete
+    suspend fun delete(contact: Contact)
+
+    @Query("DELETE FROM contacts")
+    suspend fun deleteAll()
+}
+```
+
+### data/AppDatabase.kt
+```
+package cg.missamou.monrepertoire.data
+
+import android.content.Context
+import androidx.room.Database
+import androidx.room.Room
+import androidx.room.RoomDatabase
+
+@Database(entities = [Contact::class], version = 1)
+abstract class AppDatabase : RoomDatabase() {
+    abstract fun contactDao(): ContactDao
+
+    companion object {
+        @Volatile private var INSTANCE: AppDatabase? = null
+
+        fun getDatabase(context: Context): AppDatabase {
+            return INSTANCE ?: synchronized(this) {
+                val instance = Room.databaseBuilder(
+                    context.applicationContext,
+                    AppDatabase::class.java,
+                    "mon_repertoire_db"
+                ).build()
+                INSTANCE = instance
+                instance
+            }
+        }
+    }
+}
+```
+
+### ui/MainActivity.kt
+```
+package cg.missamou.monrepertoire.ui
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.lifecycle.lifecycleScope
+import cg.missamou.monrepertoire.data.AppDatabase
+import kotlinx.coroutines.launch
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        val db = AppDatabase.getDatabase(applicationContext)
+
+        setContent {
+            MaterialTheme {
+                Surface {
+                    AppNavHost()
+                }
+            }
+        }
+    }
+}
+```
+
+### ui/navigation/AppNavHost.kt
+```
+package cg.missamou.monrepertoire.ui.navigation
+
+import androidx.compose.runtime.Composable
+import androidx.navigation.NavHostController
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import cg.missamou.monrepertoire.ui.screens.*
+
+@Composable
+fun AppNavHost(navController: NavHostController = rememberNavController()) {
+    NavHost(navController = navController, startDestination = "splash") {
+        composable("splash") { SplashScreen(navController) }
+        composable("login") { LoginScreen(navController) }
+        composable("contacts") { ContactsScreen(navController) }
+        composable("add") { AddContactScreen(navController) }
+        composable("settings") { SettingsScreen(navController) }
+    }
+}
+```
+
+### ui/screens/SplashScreen.kt
+```
+package cg.missamou.monrepertoire.ui.screens
+
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
+import kotlinx.coroutines.delay
+
+@Composable
+fun SplashScreen(navController: NavController) {
+    LaunchedEffect(Unit) {
+        delay(2000)
+        navController.navigate("login") {
+            popUpTo("splash") { inclusive = true }
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            // TODO: replace with your logo image
+            Text(text = "Mon Répertoire", style = androidx.compose.material3.MaterialTheme.typography.headlineMedium)
+            Spacer(Modifier.height(8.dp))
+            Text(text = "Sauvegardez vos contacts en toute sécurité")
+        }
+    }
+}
+```
+
+### ui/screens/LoginScreen.kt
+```
+package cg.missamou.monrepertoire.ui.screens
+
+import android.app.Activity
+import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInClient
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.GoogleAuthProvider
+
+@Composable
+fun LoginScreen(navController: NavController) {
+    val context = LocalContext.current
+    val activity = context as Activity
+
+    val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+        .requestIdToken("YOUR_WEB_CLIENT_ID") // <- replace with your web client id from Firebase
+        .requestEmail()
+        .build()
+
+    val googleClient: GoogleSignInClient = GoogleSignIn.getClient(context, gso)
+
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+        try {
+            val account = task.getResult(Exception::class.java)
+            val credential = GoogleAuthProvider.getCredential(account?.idToken, null)
+            FirebaseAuth.getInstance().signInWithCredential(credential)
+                .addOnCompleteListener { authResult ->
+                    if (authResult.isSuccessful) {
+                        navController.navigate("contacts") {
+                            popUpTo("login") { inclusive = true }
+                        }
+                    }
+                }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    Column(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(text = "Se connecter avec Google")
+        Spacer(modifier = Modifier.height(12.dp))
+        Button(onClick = {
+            val signInIntent: Intent = googleClient.signInIntent
+            launcher.launch(signInIntent)
+        }) {
+            Text("Connexion Google")
+        }
+    }
+}
+```
+
+### ui/screens/ContactsScreen.kt
+```
+package cg.missamou.monrepertoire.ui.screens
+
+import android.Manifest
+import android.content.ContentResolver
+import android.content.Context
+import android.provider.ContactsContract
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
+import cg.missamou.monrepertoire.data.AppDatabase
+import cg.missamou.monrepertoire.data.Contact
+import kotlinx.coroutines.launch
+
+@Composable
+fun ContactsScreen(navController: NavController) {
+    val ctx = LocalContext.current
+    val db = AppDatabase.getDatabase(ctx)
+    val dao = db.contactDao()
+    val contacts by dao.getAll().collectAsState(initial = emptyList())
+    val scope = rememberCoroutineScope()
+
+    Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
+        Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+            Button(onClick = { navController.navigate("add") }) { Text("Ajouter") }
+            Button(onClick = { importPhoneContacts(ctx, dao) }) { Text("Importer") }
+            Button(onClick = { scope.launch { dao.deleteAll() } }) { Text("Supprimer tout") }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        LazyColumn {
+            items(contacts) { c ->
+                Row(modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(text = c.name)
+                        Text(text = c.phone)
+                    }
+                    IconButton(onClick = { scope.launch { dao.delete(c) } }) {
+                        Icon(imageVector = androidx.compose.material.icons.Icons.Default.Delete, contentDescription = "Supprimer")
+                    }
+                }
+            }
+        }
+    }
+}
+
+fun importPhoneContacts(context: Context, dao: cg.missamou.monrepertoire.data.ContactDao) {
+    // This is a simple synchronous importer; for production use do this in coroutine and request permissions
+    val resolver: ContentResolver = context.contentResolver
+    val cursor = resolver.query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+        null, null, null, null)
+    cursor?.use {
+        while (it.moveToNext()) {
+            val name = it.getString(it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)) ?: ""
+            val number = it.getString(it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)) ?: ""
+            val contact = Contact(name = name, phone = number)
+            // insert in background
+            kotlinx.coroutines.GlobalScope.launch {
+                dao.insert(contact)
+                // also sync to Firebase in real implementation
+            }
+        }
+    }
+}
+```
+
+### ui/screens/AddContactScreen.kt
+```
+package cg.missamou.monrepertoire.ui.screens
+
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
+import cg.missamou.monrepertoire.data.AppDatabase
+import cg.missamou.monrepertoire.data.Contact
+import kotlinx.coroutines.launch
+
+@Composable
+fun AddContactScreen(navController: NavController) {
+    val name = remember { mutableStateOf("") }
+    val phone = remember { mutableStateOf("") }
+    val email = remember { mutableStateOf("") }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val dao = AppDatabase.getDatabase(ctx).contactDao()
+    val scope = rememberCoroutineScope()
+
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        OutlinedTextField(value = name.value, onValueChange = { name.value = it }, label = { Text("Nom") })
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(value = phone.value, onValueChange = { phone.value = it }, label = { Text("Téléphone") })
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(value = email.value, onValueChange = { email.value = it }, label = { Text("Email (optionnel)") })
+        Spacer(Modifier.height(12.dp))
+        Button(onClick = {
+            val c = Contact(name = name.value, phone = phone.value, email = email.value.ifBlank { null })
+            scope.launch { dao.insert(c) }
+            navController.popBackStack()
+        }) { Text("Enregistrer") }
+    }
+}
+```
+
+### ui/screens/SettingsScreen.kt
+```
+package cg.missamou.monrepertoire.ui.screens
+
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+
+@Composable
+fun SettingsScreen() {
+    val ctx = LocalContext.current
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        Button(onClick = {
+            val emailIntent = Intent(Intent.ACTION_SENDTO).apply {
+                data = Uri.parse("mailto:chatelbrazza2009@gmail.com")
+                putExtra(Intent.EXTRA_SUBJECT, "Suggestion Mon Répertoire")
+            }
+            ctx.startActivity(emailIntent)
+        }) { Text("Contacter le développeur (Email)") }
+
+        Button(onClick = {
+            val uri = Uri.parse("https://wa.me/242066399414?text=Suggestion%20Mon%20R%C3%A9pertoire")
+            val i = Intent(Intent.ACTION_VIEW, uri)
+            ctx.startActivity(i)
+        }) { Text("Contacter via WhatsApp") }
+    }
+}
+```
+
+---
+
+# Firebase service (basic sync helpers)
+
+## firebase/FirebaseService.kt
+```
+package cg.missamou.monrepertoire.firebase
+
+import com.google.firebase.auth.ktx.auth
+import com.google.firebase.firestore.ktx.firestore
+import com.google.firebase.ktx.Firebase
+import cg.missamou.monrepertoire.data.Contact
+import kotlinx.coroutines.tasks.await
+
+object FirebaseService {
+    private val auth = Firebase.auth
+    private val db = Firebase.firestore
+
+    private fun userCollection() = db.collection("users").document(auth.currentUser?.uid ?: "anonymous").collection("contacts")
+
+    suspend fun uploadContact(local: Contact) {
+        val map = mapOf("name" to local.name, "phone" to local.phone, "email" to local.email)
+        userCollection().add(map).await()
+    }
+
+    suspend fun fetchAll(): List<Contact> {
+        val docs = userCollection().get().await()
+        val list = mutableListOf<Contact>()
+        var tempId = 1L
+        for (d in docs.documents) {
+            val name = d.getString("name") ?: ""
+            val phone = d.getString("phone") ?: ""
+            val email = d.getString("email")
+            list.add(Contact(id = tempId++, name = name, phone = phone, email = email))
+        }
+        return list
+    }
+}
+```
+
+---
+
+# Notes & to-dos (production readiness)
+
+- Replace `YOUR_WEB_CLIENT_ID` in `LoginScreen.kt` with the Web client ID from Firebase (Auth -> Sign-in method -> OAuth client) or use the recommended FirebaseAuth GoogleSignIn integration example and `google-services.json`.
+- Implement runtime permissions handling for reading phone contacts (request `READ_CONTACTS`).
+- Move long-running IO operations off the main thread (use ViewModel + coroutine scopes). The example uses `GlobalScope` in one place for simplicity — replace it with scoped coroutines.
+- Improve error handling, loading indicators, and UI polish.
+- Add proguard rules and keystore for release builds.
+- For automatic sync: implement real-time listeners to Firestore and conflict resolution.
+
+---
+
+# Play Store assets & metadata (I can generate these next):
+- App title: Mon Répertoire
+- Short description: Sauvegardez et restaurez vos contacts via Google Login.
+- Long description: (I can draft a 4000-char version)
+- Privacy Policy: I can generate a GDPR/Google Play compliant privacy policy explaining Firebase usage and data storage.
+
+---
+
+# End of project skeleton
+
+Copy the files into your Android Studio project structure, add `google-services.json`, and test. If tu veux, je peux maintenant: 
+- generate the privacy policy,
+- prepare Play Store descriptions and screenshots,
+- or produce a signed `.aab` (I'll guide you through the keystore step).
+
+
+---
+
+# Compléments ajoutés — Politique, Play Store, icônes, sécurité, et packaging
+
+> **Note** : Ce qui suit a été ajouté au document pour compléter le projet et te permettre d'aller jusqu'à la publication. Tout est prêt à copier-coller dans Android Studio ou dans la Play Console.
+
+## 1) Politique de confidentialité (modèle — à personnaliser)
+
+**Politique de confidentialité — Mon Répertoire**
+
+**Date d'entrée en vigueur :** 27 août 2025
+
+**1. Introduction**
+Mon Répertoire ("nous", "notre", "l'application") respecte votre vie privée. La présente Politique de confidentialité explique quelles données nous collectons, pourquoi nous les collectons et comment vous pouvez les gérer.
+
+**2. Données collectées**
+- **Données de contact que vous saisissez :** nom, numéro de téléphone, adresse e‑mail. Ces données sont stockées localement sur votre appareil (Room) et synchronisées dans votre espace sécurisé sur Firebase Firestore si vous autorisez la synchronisation.
+- **Données d’authentification :** nous utilisons l’authentification Google via Firebase Authentication. Nous ne stockons pas votre mot de passe ; nous recevons uniquement un identifiant d’utilisateur Firebase (UID) permettant d’isoler vos données.
+- **Données techniques :** identifiants anonymes nécessaires au fonctionnement (ex. version d’app, logs d’erreurs pour débogage si activé).
+
+**3. Utilisation des données**
+- Sauvegarder et restaurer vos contacts en cas de perte/vol d’appareil.
+- Améliorer l’application (diagnostics anonymes si activés).
+- Répondre à vos messages/suggestions lorsque vous contactez le développeur.
+
+**4. Partage des données**
+Nous ne vendons ni ne louons vos données. Les données stockées dans Firebase sont accessibles uniquement via votre compte Firebase (UID). Nous pouvons partager des données techniques anonymes avec des services d’analyse si vous y consentez.
+
+**5. Conservation des données**
+Vos contacts restent stockés tant que vous ne les supprimez pas ou que vous ne supprimez pas votre compte Firebase associé. Vous pouvez demander la suppression complète de vos données en contactant le développeur à chatelbrazza2009@gmail.com.
+
+**6. Sécurité**
+Nous utilisons Firestore (protocole TLS) et règles Firestore pour restreindre l’accès aux documents aux seuls utilisateurs authentifiés. Conservez votre accès Google sécurisé (mot de passe, 2FA) pour protéger vos données.
+
+**7. Vos droits**
+Vous pouvez accéder, corriger ou supprimer vos données en vous connectant à votre compte et en utilisant l’application ou en contactant le développeur.
+
+**8. Contact**
+Pour toute demande relative à la vie privée : chatelbrazza2009@gmail.com
+
+
+---
+
+## 2) Textes Play Store (FR)
+
+**Titre (≤ 30 caractères)**
+Mon Répertoire — Sauvegarde contacts
+
+**Courte description (≤ 80 caractères)**
+Sauvegardez, importez et restaurez vos contacts via Google Login (Cloud + local).
+
+**Description complète (brouillon 1)**
+Mon Répertoire protège les contacts de vos proches. En cas de perte ou de vol de votre téléphone, retrouvez facilement tous vos contacts grâce à la sauvegarde sécurisée sur Google (Firebase).
+
+Fonctionnalités :
+• Sauvegarde locale (fonctionne hors ligne)
+• Synchronisation sécurisée via Google Login (Firebase)
+• Import depuis le répertoire téléphonique
+• Ajout / suppression rapide
+• Contacter le développeur par Email ou WhatsApp pour suggestions
+
+Sécurité & confidentialité :
+Les contacts sont stockés uniquement pour permettre leur restauration. L'application utilise Firebase Authentication pour l'authentification et Firestore pour la synchronisation.
+
+**Notes pour la fiche**
+- Langue par défaut : Français (FR)
+- Ajoute captures d’écran montrant : écran d’accueil, formulaire d’ajout, écran d’import, écran paramètres (contact dev).
+- Politique de confidentialité: fournir l’URL publique (héberge sur GitHub Pages, un site simple ou Google Drive public).
+
+
+---
+
+## 3) Assets Play Store — recommandations
+
+- **Icône (512×512 PNG)** : fond bleu (#2196F3), carnet blanc/jaune stylisé, texte court "Mon Répertoire" optionnel.
+- **Feature graphic (1024×500)** : composition simple bleu-jaune, slogan court "Sauvegardez vos contacts — Cloud & local".
+- **Screenshots (taille téléphone, 1080×1920 recommandé)** : 4 images :
+  1. Écran d'accueil / liste des contacts
+  2. Formulaire d'ajout de contact
+  3. Flux d'import depuis le répertoire
+  4. Écran paramètres (boutons Email/WhatsApp et indication de synchronisation)
+
+Je peux te fournir des maquettes PNG prêtes à l’emploi si tu veux.
+
+
+---
+
+## 4) Sécurité & bonnes pratiques techniques (à implémenter)
+
+1. **Remplacer GlobalScope** par `viewModelScope` dans des ViewModel pour les opérations DB/Firestore.
+2. **Permissions runtime** : demander `READ_CONTACTS` avant d’importer.
+3. **Règles Firestore** : limiter l’accès aux documents du user :
+```
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId}/contacts/{docId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}
+```
+4. **Gestion conflits** : timestamp chaque contact côté cloud et choisir latest-change ou proposer fusion.
+5. **Sauvegarde chiffrée (optionnel)** : chiffrer les données sensibles côté client avant upload.
+
+
+---
+
+## 5) Snippets utiles à coller dans le projet
+
+### ViewModel (exemple basique pour contacts)
+```kotlin
+package cg.missamou.monrepertoire.viewmodel
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import cg.missamou.monrepertoire.data.Contact
+import cg.missamou.monrepertoire.data.ContactDao
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
+
+class ContactViewModel(private val dao: ContactDao): ViewModel() {
+    private val _contacts = MutableStateFlow<List<Contact>>(emptyList())
+    val contacts: StateFlow<List<Contact>> = _contacts
+
+    init {
+        viewModelScope.launch {
+            dao.getAll().collect { _contacts.value = it }
+        }
+    }
+
+    fun add(contact: Contact) = viewModelScope.launch { dao.insert(contact) }
+    fun delete(contact: Contact) = viewModelScope.launch { dao.delete(contact) }
+    fun deleteAll() = viewModelScope.launch { dao.deleteAll() }
+}
+```
+
+### Permissions (Android 13+ reminder)
+- Utilise `ActivityResultContracts.RequestPermission()` pour `READ_CONTACTS`. Vérifie `shouldShowRequestPermissionRationale` pour expliquer l’usage.
+
+
+---
+
+## 6) Générer un keystore et signer (.aab)
+
+**Générer une keystore (commande keytool)**
+```
+keytool -genkey -v -keystore monrepertoire-keystore.jks -keyalg RSA -keysize 2048 -validity 10000 -alias monrep_alias
+```
+- Garde précieusement le mot de passe et le fichier `monrepertoire-keystore.jks`.
+
+**Signer dans Android Studio**
+1. Build > Generate Signed Bundle / APK > Android App Bundle. 
+2. Sélectionne ta keystore et entre alias + mot de passe.
+3. Choose Release > Finish. 
+
+Le `.aab` généré est prêt à uploader sur Google Play Console.
+
+
+---
+
+## 7) Checklist finale avant publication
+
+- [ ] App stable (test sur 2-3 appareils)
+- [ ] Gestion permissions ok
+- [ ] Auth Google fonctionnelle (Web client id set and SHA-1 in Firebase)
+- [ ] Règles Firestore en place
+- [ ] Politique de confidentialité accessible par URL
+- [ ] Fiches Play Store (texte + images) prêtes
+- [ ] Keystore sécurisé
+- [ ] Tests crash/ANR passés
+
+
+---
+
+## 8) Prochaines actions que je peux réaliser pour toi (choisis ou laisse-moi décider)
+- Générer la **Politique de confidentialité** au format HTML prêt à héberger.
+- Générer des **images/screen mocks** (PNG) pour Play Store (je peux créer des maquettes simples).  
+- Préparer un script Docker/CI pour générer automatiquement `.aab` (optionnel).
+- T’aider pas-à-pas pour publier (je te fournis chaque texte à copier-coller dans Play Console).
+
+
+---
+
+*J’ai ajouté tous ces éléments dans le document principal. Dis-moi si tu veux que je génère maintenant : (A) la page HTML de la politique de confidentialité, (B) les images des screenshots, ou (C) que je prépare les textes finaux à coller dans la Play Console.*
+
